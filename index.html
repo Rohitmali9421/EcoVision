@@ -1,0 +1,913 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <title>VisionAssist – Eyes for the Blind</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@400;700;800&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #0a0e0d;
+      --surface: #111715;
+      --panel: #162019;
+      --accent: #3dffa0;
+      --accent2: #00cfff;
+      --warn: #ffcc44;
+      --danger: #ff4d4d;
+      --text: #e8f5ee;
+      --muted: #6b8a77;
+      --radius: 20px;
+      --glow: 0 0 30px rgba(61,255,160,0.18);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Syne', sans-serif;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* Animated background grid */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(61,255,160,0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(61,255,160,0.03) 1px, transparent 1px);
+      background-size: 40px 40px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .app {
+      position: relative;
+      z-index: 1;
+      max-width: 480px;
+      margin: 0 auto;
+      padding: 20px 16px 100px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      min-height: 100vh;
+    }
+
+    /* ---- Header ---- */
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 0 4px;
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .logo-icon {
+      width: 38px;
+      height: 38px;
+      background: var(--accent);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      box-shadow: var(--glow);
+    }
+
+    .logo-text { font-size: 1.15rem; font-weight: 800; letter-spacing: -0.5px; }
+    .logo-sub  { font-size: 0.65rem; color: var(--muted); font-family: 'DM Mono', monospace; letter-spacing: 1px; }
+
+    .status-dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      background: var(--muted);
+      transition: background 0.3s, box-shadow 0.3s;
+    }
+    .status-dot.active  { background: var(--accent); box-shadow: 0 0 10px var(--accent); }
+    .status-dot.warning { background: var(--warn);   box-shadow: 0 0 10px var(--warn); }
+    .status-dot.danger  { background: var(--danger); box-shadow: 0 0 10px var(--danger); }
+
+    /* ---- Setup Card ---- */
+    .card {
+      background: var(--surface);
+      border: 1px solid rgba(61,255,160,0.1);
+      border-radius: var(--radius);
+      padding: 20px;
+    }
+
+    .card-title {
+      font-size: 0.7rem;
+      font-family: 'DM Mono', monospace;
+      letter-spacing: 2px;
+      color: var(--muted);
+      text-transform: uppercase;
+      margin-bottom: 14px;
+    }
+
+    .input-group { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
+
+    label { font-size: 0.8rem; color: var(--muted); }
+
+    input[type="text"], input[type="number"], select {
+      background: var(--panel);
+      border: 1px solid rgba(61,255,160,0.15);
+      border-radius: 10px;
+      color: var(--text);
+      font-family: 'DM Mono', monospace;
+      font-size: 0.9rem;
+      padding: 10px 14px;
+      width: 100%;
+      outline: none;
+      transition: border 0.2s;
+    }
+    input:focus, select:focus { border-color: var(--accent); }
+    select option { background: #111; }
+
+    /* ---- Camera View ---- */
+    .camera-wrap {
+      position: relative;
+      border-radius: var(--radius);
+      overflow: hidden;
+      background: #000;
+      aspect-ratio: 4/3;
+      border: 1px solid rgba(61,255,160,0.12);
+    }
+
+    #video {
+      width: 100%; height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    #canvas { display: none; }
+
+    .camera-overlay {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 14px;
+      pointer-events: none;
+    }
+
+    .scan-line {
+      position: absolute;
+      left: 0; right: 0;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, var(--accent), transparent);
+      animation: scan 2.5s linear infinite;
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+    .scan-line.active { opacity: 1; }
+    @keyframes scan {
+      0%   { top: 0; }
+      100% { top: 100%; }
+    }
+
+    .corner {
+      position: absolute;
+      width: 22px; height: 22px;
+      border-color: var(--accent);
+      border-style: solid;
+      opacity: 0.6;
+    }
+    .corner.tl { top: 10px; left: 10px; border-width: 2px 0 0 2px; border-radius: 4px 0 0 0; }
+    .corner.tr { top: 10px; right: 10px; border-width: 2px 2px 0 0; border-radius: 0 4px 0 0; }
+    .corner.bl { bottom: 10px; left: 10px; border-width: 0 0 2px 2px; border-radius: 0 0 0 4px; }
+    .corner.br { bottom: 10px; right: 10px; border-width: 0 2px 2px 0; border-radius: 0 0 4px 0; }
+
+    .cam-badge {
+      position: absolute;
+      top: 10px; left: 50%; transform: translateX(-50%);
+      background: rgba(0,0,0,0.6);
+      border: 1px solid rgba(61,255,160,0.3);
+      border-radius: 20px;
+      padding: 3px 12px;
+      font-size: 0.65rem;
+      font-family: 'DM Mono', monospace;
+      letter-spacing: 1px;
+      color: var(--accent);
+    }
+
+    .countdown-ring {
+      position: absolute;
+      bottom: 12px; right: 12px;
+      width: 44px; height: 44px;
+    }
+    .countdown-ring svg { transform: rotate(-90deg); }
+    .countdown-ring circle {
+      fill: none;
+      stroke: rgba(255,255,255,0.1);
+      stroke-width: 3;
+    }
+    .countdown-ring .progress {
+      stroke: var(--accent);
+      stroke-linecap: round;
+      stroke-dasharray: 113;
+      stroke-dashoffset: 113;
+      transition: stroke-dashoffset 0.5s linear;
+    }
+    .countdown-text {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.8rem;
+      font-family: 'DM Mono', monospace;
+      color: var(--accent);
+    }
+
+    /* ---- Interval Slider ---- */
+    .interval-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    input[type="range"] {
+      -webkit-appearance: none;
+      flex: 1;
+      height: 4px;
+      background: var(--panel);
+      border-radius: 4px;
+      outline: none;
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 18px; height: 18px;
+      border-radius: 50%;
+      background: var(--accent);
+      box-shadow: 0 0 8px var(--accent);
+      cursor: pointer;
+    }
+
+    .interval-val {
+      font-family: 'DM Mono', monospace;
+      font-size: 0.85rem;
+      color: var(--accent);
+      min-width: 36px;
+      text-align: right;
+    }
+
+    /* ---- Buttons ---- */
+    .btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      border: none;
+      border-radius: 14px;
+      cursor: pointer;
+      font-family: 'Syne', sans-serif;
+      font-weight: 700;
+      font-size: 1rem;
+      padding: 14px 20px;
+      transition: all 0.2s;
+      width: 100%;
+      letter-spacing: 0.3px;
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      color: #0a0e0d;
+      box-shadow: var(--glow);
+    }
+    .btn-primary:hover  { transform: translateY(-1px); box-shadow: 0 0 40px rgba(61,255,160,0.35); }
+    .btn-primary:active { transform: translateY(0); }
+
+    .btn-danger {
+      background: rgba(255,77,77,0.12);
+      color: var(--danger);
+      border: 1px solid rgba(255,77,77,0.3);
+    }
+    .btn-danger:hover { background: rgba(255,77,77,0.2); }
+
+    .btn-secondary {
+      background: var(--panel);
+      color: var(--text);
+      border: 1px solid rgba(61,255,160,0.15);
+    }
+    .btn-secondary:hover { border-color: var(--accent); }
+
+    .btn:disabled { opacity: 0.4; pointer-events: none; }
+
+    /* ---- Voice Feedback ---- */
+    .voice-card {
+      background: var(--surface);
+      border: 1px solid rgba(61,255,160,0.1);
+      border-radius: var(--radius);
+      padding: 18px 20px;
+    }
+
+    .voice-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+
+    .wave-bars {
+      display: flex;
+      gap: 3px;
+      align-items: flex-end;
+      height: 24px;
+    }
+
+    .wave-bar {
+      width: 4px;
+      border-radius: 2px;
+      background: var(--accent);
+      animation: wave 0.8s ease-in-out infinite alternate;
+      opacity: 0.2;
+    }
+    .wave-bar:nth-child(1) { animation-delay: 0s;    height: 8px; }
+    .wave-bar:nth-child(2) { animation-delay: 0.15s; height: 16px; }
+    .wave-bar:nth-child(3) { animation-delay: 0.3s;  height: 24px; }
+    .wave-bar:nth-child(4) { animation-delay: 0.15s; height: 16px; }
+    .wave-bar:nth-child(5) { animation-delay: 0s;    height: 8px; }
+    @keyframes wave {
+      from { transform: scaleY(0.4); }
+      to   { transform: scaleY(1); }
+    }
+    .wave-bar.speaking { opacity: 1; }
+
+    #voice-text {
+      font-size: 0.9rem;
+      line-height: 1.55;
+      color: var(--text);
+      min-height: 50px;
+      transition: opacity 0.3s;
+    }
+
+    /* ---- Objects Grid ---- */
+    .objects-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    .obj-chip {
+      background: var(--panel);
+      border: 1px solid rgba(61,255,160,0.1);
+      border-radius: 12px;
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      animation: chipIn 0.3s ease both;
+    }
+    @keyframes chipIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .obj-name { font-weight: 700; font-size: 0.85rem; text-transform: capitalize; }
+    .obj-meta { font-family: 'DM Mono', monospace; font-size: 0.7rem; color: var(--muted); }
+    .obj-pos   { font-size: 0.7rem; padding: 2px 6px; border-radius: 6px; display: inline-block; width: fit-content; }
+    .pos-left  { background: rgba(0,207,255,0.1); color: var(--accent2); }
+    .pos-right { background: rgba(255,204,68,0.1); color: var(--warn); }
+    .pos-front { background: rgba(61,255,160,0.1); color: var(--accent); }
+
+    /* ---- Log ---- */
+    #log {
+      font-family: 'DM Mono', monospace;
+      font-size: 0.7rem;
+      color: var(--muted);
+      max-height: 100px;
+      overflow-y: auto;
+      line-height: 1.7;
+    }
+    #log span { display: block; }
+    #log span.info  { color: var(--accent); }
+    #log span.warn  { color: var(--warn); }
+    #log span.error { color: var(--danger); }
+
+    /* ---- Floating controls ---- */
+    .fab-row {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 12px;
+      z-index: 100;
+    }
+
+    .fab {
+      width: 60px; height: 60px;
+      border-radius: 50%;
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 22px;
+      transition: all 0.2s;
+    }
+
+    .fab-main {
+      width: 72px; height: 72px;
+      background: var(--accent);
+      color: #0a0e0d;
+      box-shadow: var(--glow);
+    }
+    .fab-main:hover { transform: scale(1.08); }
+
+    .fab-stop {
+      background: rgba(255,77,77,0.15);
+      color: var(--danger);
+      border: 1px solid rgba(255,77,77,0.3);
+    }
+
+    .fab-mute {
+      background: var(--panel);
+      color: var(--text);
+      border: 1px solid rgba(61,255,160,0.15);
+    }
+
+    /* ---- Pulse ring on main fab when running ---- */
+    .fab-main.running::after {
+      content: '';
+      position: absolute;
+      width: 100%; height: 100%;
+      border-radius: 50%;
+      border: 2px solid var(--accent);
+      animation: pulse-ring 1.5s ease-out infinite;
+    }
+    @keyframes pulse-ring {
+      0%   { transform: scale(1); opacity: 0.8; }
+      100% { transform: scale(1.6); opacity: 0; }
+    }
+
+    /* hidden helper */
+    .hidden { display: none !important; }
+
+    /* Accessibility: skip link */
+    .skip { position: absolute; left: -9999px; }
+
+    /* Toggle switch */
+    .toggle-row { display: flex; align-items: center; justify-content: space-between; }
+    .toggle { position: relative; width: 44px; height: 24px; }
+    .toggle input { opacity: 0; width: 0; height: 0; }
+    .slider-toggle {
+      position: absolute; inset: 0;
+      background: var(--panel);
+      border-radius: 24px;
+      border: 1px solid rgba(61,255,160,0.2);
+      cursor: pointer;
+      transition: background 0.3s;
+    }
+    .slider-toggle::before {
+      content: '';
+      position: absolute;
+      width: 18px; height: 18px;
+      left: 3px; top: 2px;
+      background: var(--muted);
+      border-radius: 50%;
+      transition: all 0.3s;
+    }
+    .toggle input:checked + .slider-toggle { background: rgba(61,255,160,0.15); border-color: var(--accent); }
+    .toggle input:checked + .slider-toggle::before { transform: translateX(20px); background: var(--accent); }
+  </style>
+</head>
+<body>
+  <a href="#main" class="skip">Skip to main content</a>
+
+  <div class="app" id="main" role="main">
+
+    <!-- Header -->
+    <header>
+      <div class="logo">
+        <div class="logo-icon">👁️</div>
+        <div>
+          <div class="logo-text">VisionAssist</div>
+          <div class="logo-sub">OBJECT DETECTION · VOICE GUIDE</div>
+        </div>
+      </div>
+      <div class="status-dot" id="statusDot" aria-label="Connection status"></div>
+    </header>
+
+    <!-- Server Setup -->
+    <div class="card" id="setupCard">
+      <div class="card-title">⚙ Server Setup</div>
+      <div class="input-group">
+        <label for="serverUrl">ngrok Backend URL</label>
+        <input type="text" id="serverUrl" placeholder="https://xxxx.ngrok-free.app"
+               aria-label="Enter your ngrok backend URL" />
+      </div>
+      <button class="btn btn-secondary" id="testBtn" onclick="testConnection()" aria-label="Test server connection">
+        🔗 Test Connection
+      </button>
+    </div>
+
+    <!-- Camera -->
+    <div class="camera-wrap" aria-label="Camera viewfinder">
+      <video id="video" autoplay muted playsinline aria-label="Camera feed"></video>
+      <canvas id="canvas"></canvas>
+      <div class="camera-overlay">
+        <div class="scan-line" id="scanLine"></div>
+        <div class="corner tl"></div>
+        <div class="corner tr"></div>
+        <div class="corner bl"></div>
+        <div class="corner br"></div>
+        <div class="cam-badge" id="camBadge">CAMERA OFF</div>
+        <div class="countdown-ring" id="countdownRing" aria-hidden="true">
+          <svg width="44" height="44" viewBox="0 0 44 44">
+            <circle cx="22" cy="22" r="18"></circle>
+            <circle class="progress" id="progressCircle" cx="22" cy="22" r="18"></circle>
+          </svg>
+          <div class="countdown-text" id="countdownText">–</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Interval + Options -->
+    <div class="card">
+      <div class="card-title">🎛 Scan Settings</div>
+      <div class="input-group">
+        <label for="intervalSlider">Scan Interval</label>
+        <div class="interval-row">
+          <input type="range" id="intervalSlider" min="2" max="15" value="5"
+                 aria-label="Set scan interval in seconds" oninput="updateInterval(this.value)" />
+          <span class="interval-val" id="intervalVal">5s</span>
+        </div>
+      </div>
+
+      <div class="toggle-row" style="margin-bottom: 12px;">
+        <label for="vibToggle" style="color:var(--text); font-size:0.85rem;">Vibration Feedback</label>
+        <label class="toggle">
+          <input type="checkbox" id="vibToggle" checked />
+          <span class="slider-toggle"></span>
+        </label>
+      </div>
+
+      <div class="toggle-row">
+        <label for="autoRead" style="color:var(--text); font-size:0.85rem;">Auto-read on start</label>
+        <label class="toggle">
+          <input type="checkbox" id="autoRead" checked />
+          <span class="slider-toggle"></span>
+        </label>
+      </div>
+    </div>
+
+    <!-- Voice Output -->
+    <div class="voice-card">
+      <div class="voice-header">
+        <div class="card-title" style="margin:0">🔊 Voice Output</div>
+        <div class="wave-bars" id="waveBars" aria-hidden="true">
+          <div class="wave-bar"></div>
+          <div class="wave-bar"></div>
+          <div class="wave-bar"></div>
+          <div class="wave-bar"></div>
+          <div class="wave-bar"></div>
+        </div>
+      </div>
+      <div id="voice-text" aria-live="assertive" aria-atomic="true" role="status">
+        Ready. Enter server URL and press Start.
+      </div>
+    </div>
+
+    <!-- Detected Objects -->
+    <div class="card" id="objectsSection" class="hidden">
+      <div class="card-title">📦 Detected Objects</div>
+      <div class="objects-grid" id="objectsGrid" aria-live="polite"></div>
+    </div>
+
+    <!-- Console Log -->
+    <div class="card">
+      <div class="card-title">📋 Activity Log</div>
+      <div id="log" aria-live="polite"></div>
+    </div>
+
+    <!-- Spacer for FAB -->
+    <div style="height: 90px;"></div>
+  </div>
+
+  <!-- Floating Action Buttons -->
+  <div class="fab-row" role="toolbar" aria-label="Controls">
+    <button class="fab fab-mute" id="muteBtn" onclick="toggleMute()" title="Toggle mute" aria-label="Toggle voice mute">🔊</button>
+    <button class="fab fab-main" id="mainBtn" onclick="toggleDetection()" title="Start / Stop" aria-label="Start or stop detection">▶</button>
+    <button class="fab fab-stop" id="snapBtn" onclick="snapNow()" title="Scan now" aria-label="Scan immediately">📷</button>
+  </div>
+
+  <script>
+    // ===================== STATE =====================
+    let running = false;
+    let muted = false;
+    let camera = false;
+    let scanTimer = null;
+    let countdown = 0;
+    let countdownTimer = null;
+    let intervalSec = 5;
+    let stream = null;
+    let speaking = false;
+    const synth = window.speechSynthesis;
+
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const statusDot = document.getElementById('statusDot');
+    const scanLine = document.getElementById('scanLine');
+    const camBadge = document.getElementById('camBadge');
+    const countdownText = document.getElementById('countdownText');
+    const progressCircle = document.getElementById('progressCircle');
+    const voiceText = document.getElementById('voice-text');
+    const waveBars = document.querySelectorAll('.wave-bar');
+    const objectsGrid = document.getElementById('objectsGrid');
+    const logEl = document.getElementById('log');
+    const mainBtn = document.getElementById('mainBtn');
+    const muteBtn = document.getElementById('muteBtn');
+
+    const CIRCUMFERENCE = 2 * Math.PI * 18; // ≈ 113
+
+    // ===================== LOG =====================
+    function log(msg, type = 'info') {
+      const span = document.createElement('span');
+      span.className = type;
+      const ts = new Date().toLocaleTimeString();
+      span.textContent = `[${ts}] ${msg}`;
+      logEl.prepend(span);
+      if (logEl.children.length > 20) logEl.lastChild.remove();
+    }
+
+    // ===================== STATUS =====================
+    function setStatus(state) {
+      statusDot.className = 'status-dot ' + state;
+    }
+
+    // ===================== VOICE =====================
+    function speak(text) {
+      if (muted) return;
+      synth.cancel();
+      const utt = new SpeechSynthesisUtterance(text);
+      utt.rate = 1.05;
+      utt.pitch = 1.0;
+      utt.volume = 1;
+
+      // Try to pick a natural voice
+      const voices = synth.getVoices();
+      const preferred = voices.find(v =>
+        v.lang.startsWith('en') && (v.name.includes('Google') || v.name.includes('Samantha') || v.name.includes('Karen'))
+      );
+      if (preferred) utt.voice = preferred;
+
+      utt.onstart = () => {
+        speaking = true;
+        waveBars.forEach(b => b.classList.add('speaking'));
+      };
+      utt.onend = utt.onerror = () => {
+        speaking = false;
+        waveBars.forEach(b => b.classList.remove('speaking'));
+      };
+
+      voiceText.textContent = text;
+      synth.speak(utt);
+
+      if (document.getElementById('vibToggle').checked && navigator.vibrate) {
+        navigator.vibrate(100);
+      }
+    }
+
+    function toggleMute() {
+      muted = !muted;
+      muteBtn.textContent = muted ? '🔇' : '🔊';
+      muteBtn.title = muted ? 'Unmute' : 'Mute';
+      if (muted) synth.cancel();
+      log(muted ? 'Voice muted' : 'Voice unmuted', muted ? 'warn' : 'info');
+    }
+
+    // ===================== CAMERA =====================
+    async function startCamera() {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 480 } },
+          audio: false
+        });
+        video.srcObject = stream;
+        await video.play();
+        camera = true;
+        camBadge.textContent = 'LIVE';
+        scanLine.classList.add('active');
+        log('Camera started', 'info');
+        return true;
+      } catch (e) {
+        log('Camera error: ' + e.message, 'error');
+        speak('Camera access denied. Please allow camera permission and try again.');
+        return false;
+      }
+    }
+
+    function stopCamera() {
+      if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+      video.srcObject = null;
+      camera = false;
+      camBadge.textContent = 'CAMERA OFF';
+      scanLine.classList.remove('active');
+    }
+
+    function captureFrame() {
+      canvas.width = video.videoWidth || 640;
+      canvas.height = video.videoHeight || 480;
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      return new Promise(res => canvas.toBlob(res, 'image/jpeg', 0.85));
+    }
+
+    // ===================== COUNTDOWN =====================
+    function startCountdown() {
+      clearInterval(countdownTimer);
+      countdown = intervalSec;
+      updateCountdown();
+      countdownTimer = setInterval(() => {
+        countdown--;
+        updateCountdown();
+        if (countdown <= 0) clearInterval(countdownTimer);
+      }, 1000);
+    }
+
+    function updateCountdown() {
+      countdownText.textContent = countdown > 0 ? countdown : '📷';
+      const offset = CIRCUMFERENCE - (countdown / intervalSec) * CIRCUMFERENCE;
+      progressCircle.style.strokeDashoffset = offset;
+    }
+
+    // ===================== DETECTION =====================
+    async function doScan() {
+      const url = document.getElementById('serverUrl').value.trim();
+      if (!url) { log('No server URL set', 'warn'); return; }
+      if (!camera) { log('No camera stream', 'warn'); return; }
+
+      log('Scanning…', 'info');
+      setStatus('warning');
+
+      try {
+        const blob = await captureFrame();
+        const form = new FormData();
+        form.append('image', blob, 'frame.jpg');
+
+        const res = await fetch(url.replace(/\/$/, '') + '/describe', {
+          method: 'POST',
+          body: form
+        });
+
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+
+        const data = await res.json();
+        setStatus('active');
+
+        // Build voice message
+        const caption = data.raw_caption || data.description || 'Nothing detected.';
+        speak(caption);
+
+        // Render chips
+        renderObjects(data.objects_detected || []);
+        log('Got ' + (data.objects_detected?.length || 0) + ' objects', 'info');
+
+      } catch (e) {
+        log('Scan error: ' + e.message, 'error');
+        setStatus('danger');
+        speak('Unable to reach the server. Please check the URL.');
+      }
+
+      if (running) startCountdown();
+    }
+
+    function renderObjects(objects) {
+      objectsGrid.innerHTML = '';
+      if (!objects.length) {
+        objectsGrid.innerHTML = '<div style="color:var(--muted);font-size:0.8rem;grid-column:1/-1">No objects detected.</div>';
+        return;
+      }
+      objects.forEach(obj => {
+        const posClass = 'pos-' + obj.position;
+        const dist = obj.distance_meters ? `${obj.distance_meters}m away` : '';
+        const conf = `${Math.round(obj.confidence * 100)}% conf`;
+        objectsGrid.innerHTML += `
+          <div class="obj-chip">
+            <div class="obj-name">${obj.object}</div>
+            <div class="obj-meta">${[conf, dist].filter(Boolean).join(' · ')}</div>
+            <div class="obj-pos ${posClass}">${obj.position}</div>
+          </div>`;
+      });
+    }
+
+    // ===================== TOGGLE =====================
+    async function toggleDetection() {
+      if (!running) {
+        const url = document.getElementById('serverUrl').value.trim();
+        if (!url) {
+          speak('Please enter the server URL first.');
+          return;
+        }
+        const ok = await startCamera();
+        if (!ok) return;
+
+        running = true;
+        mainBtn.textContent = '⏸';
+        mainBtn.classList.add('running');
+        mainBtn.setAttribute('aria-label', 'Stop detection');
+        setStatus('active');
+
+        if (document.getElementById('autoRead').checked) {
+          speak('VisionAssist is now active. I will describe your surroundings every ' + intervalSec + ' seconds.');
+        }
+
+        // First scan immediately
+        await doScan();
+        scanTimer = setInterval(doScan, intervalSec * 1000);
+        startCountdown();
+        log('Detection started, interval ' + intervalSec + 's', 'info');
+
+      } else {
+        stopDetection();
+      }
+    }
+
+    function stopDetection() {
+      running = false;
+      clearInterval(scanTimer);
+      clearInterval(countdownTimer);
+      stopCamera();
+      mainBtn.textContent = '▶';
+      mainBtn.classList.remove('running');
+      mainBtn.setAttribute('aria-label', 'Start detection');
+      countdownText.textContent = '–';
+      progressCircle.style.strokeDashoffset = CIRCUMFERENCE;
+      setStatus('');
+      speak('Detection stopped.');
+      log('Detection stopped', 'warn');
+    }
+
+    function snapNow() {
+      if (!running) {
+        speak('Start detection first, then tap the camera button to scan immediately.');
+        return;
+      }
+      clearInterval(scanTimer);
+      clearInterval(countdownTimer);
+      doScan();
+      scanTimer = setInterval(doScan, intervalSec * 1000);
+    }
+
+    // ===================== INTERVAL =====================
+    function updateInterval(val) {
+      intervalSec = parseInt(val);
+      document.getElementById('intervalVal').textContent = val + 's';
+      if (running) {
+        clearInterval(scanTimer);
+        scanTimer = setInterval(doScan, intervalSec * 1000);
+        startCountdown();
+      }
+    }
+
+    // ===================== TEST CONNECTION =====================
+    async function testConnection() {
+      const url = document.getElementById('serverUrl').value.trim();
+      if (!url) { speak('Please enter a URL first.'); return; }
+      log('Testing connection…', 'info');
+      try {
+        const res = await fetch(url.replace(/\/$/, '') + '/health');
+        const data = await res.json();
+        if (data.status === 'healthy') {
+          setStatus('active');
+          speak('Server connected successfully!');
+          log('✅ Server healthy', 'info');
+        } else {
+          throw new Error('Unexpected response');
+        }
+      } catch (e) {
+        setStatus('danger');
+        speak('Connection failed. Check the URL and try again.');
+        log('❌ Connection failed: ' + e.message, 'error');
+      }
+    }
+
+    // ===================== INIT =====================
+    // Load voices
+    if (synth.onvoiceschanged !== undefined) {
+      synth.onvoiceschanged = () => {};
+    }
+
+    // Keyboard shortcut: Space = toggle
+    document.addEventListener('keydown', e => {
+      if (e.code === 'Space' && e.target.tagName !== 'INPUT') {
+        e.preventDefault();
+        toggleDetection();
+      }
+    });
+
+    log('App ready', 'info');
+    setStatus('');
+  </script>
+</body>
+</html>
