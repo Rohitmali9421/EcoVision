@@ -10,17 +10,25 @@ let stream = null;
 let speaking = false;
 
 const synth = window.speechSynthesis;
-
-// ===================== iOS SPEECH UNLOCK =====================
-document.body.addEventListener('touchstart', () => {
-  const unlock = new SpeechSynthesisUtterance('');
-  speechSynthesis.speak(unlock);
-}, { once: true });
+let voices = [];
 
 // ===================== LOAD VOICES (iOS FIX) =====================
-speechSynthesis.onvoiceschanged = () => {
-  speechSynthesis.getVoices();
-};
+function loadVoices() {
+  voices = synth.getVoices();
+}
+
+loadVoices();
+speechSynthesis.onvoiceschanged = loadVoices;
+
+// ===================== SPEECH UNLOCK (REQUIRED FOR IOS) =====================
+function unlockSpeech() {
+  const msg = new SpeechSynthesisUtterance("");
+  msg.volume = 0;
+  speechSynthesis.speak(msg);
+}
+
+document.addEventListener("click", unlockSpeech, { once: true });
+document.addEventListener("touchstart", unlockSpeech, { once: true });
 
 // ===================== ELEMENTS =====================
 const video = document.getElementById('video');
@@ -62,33 +70,47 @@ function setStatus(state) {
 function speak(text) {
 
   if (muted) return;
-  if (!window.speechSynthesis) return;
 
-  synth.cancel();
+  if (!window.speechSynthesis) {
+    console.log("Speech not supported");
+    return;
+  }
 
-  const utt = new SpeechSynthesisUtterance(text);
-  utt.lang = "en-US";
-  utt.rate = 1;
-  utt.pitch = 1;
+  if (speechSynthesis.speaking) {
+    speechSynthesis.cancel();
+  }
 
-  utt.onstart = () => {
+  const utter = new SpeechSynthesisUtterance(text);
+
+  utter.lang = "en-US";
+  utter.rate = 1;
+  utter.pitch = 1;
+  utter.volume = 1;
+
+  // Select first English voice (important for iOS)
+  const voice = voices.find(v => v.lang.includes("en"));
+  if (voice) utter.voice = voice;
+
+  utter.onstart = () => {
     speaking = true;
     waveBars.forEach(b => b.classList.add('speaking'));
   };
 
-  utt.onend = () => {
+  utter.onend = () => {
     speaking = false;
     waveBars.forEach(b => b.classList.remove('speaking'));
   };
 
   voiceText.textContent = text;
-  synth.speak(utt);
+
+  speechSynthesis.speak(utter);
 
   if (document.getElementById('vibToggle')?.checked && navigator.vibrate) {
     navigator.vibrate(100);
   }
 }
 
+// ===================== MUTE =====================
 function toggleMute() {
   muted = !muted;
   muteBtn.textContent = muted ? '🔇' : '🔊';
@@ -99,6 +121,7 @@ function toggleMute() {
 async function testConnection() {
 
   const url = document.getElementById('serverUrl').value.trim();
+
   if (!url) {
     speak('Please enter a URL first.');
     return;
@@ -113,8 +136,8 @@ async function testConnection() {
     if (res.status === 200) {
 
       setStatus('active');
-      speak('Server connected successfully!');
-      log('✅ Server healthy (200 OK)');
+      speak('Server connected successfully');
+      log('Server healthy');
 
       setupCard.classList.add('hidden');
 
@@ -125,8 +148,8 @@ async function testConnection() {
   } catch (e) {
 
     setStatus('danger');
-    speak('Connection failed.');
-    log('❌ Connection failed: ' + e.message, 'error');
+    speak('Connection failed');
+    log('Connection failed: ' + e.message, 'error');
 
   }
 }
@@ -137,25 +160,24 @@ async function startCamera() {
   try {
 
     stream = await navigator.mediaDevices.getUserMedia({
-      video: {
-        facingMode: 'environment'
-      }
+      video: { facingMode: "environment" }
     });
 
     video.srcObject = stream;
 
     camera = true;
-    camBadge.textContent = 'LIVE';
-    scanLine.classList.add('active');
+
+    camBadge.textContent = "LIVE";
+    scanLine.classList.add("active");
 
     return true;
 
   } catch (e) {
 
-    speak('Camera access denied');
-    log('Camera error', 'error');
-    return false;
+    speak("Camera access denied");
+    log("Camera error", "error");
 
+    return false;
   }
 }
 
@@ -166,16 +188,17 @@ function stopCamera() {
   }
 
   video.srcObject = null;
+
   camera = false;
 
-  camBadge.textContent = 'CAMERA OFF';
-  scanLine.classList.remove('active');
+  camBadge.textContent = "CAMERA OFF";
+  scanLine.classList.remove("active");
 }
 
-// ===================== DETECTION =====================
+// ===================== COUNTDOWN =====================
 function updateCountdown() {
 
-  countdownText.textContent = countdown > 0 ? countdown : '📷';
+  countdownText.textContent = countdown > 0 ? countdown : "📷";
 
   const offset =
     CIRCUMFERENCE - (countdown / intervalSec) * CIRCUMFERENCE;
@@ -204,12 +227,12 @@ function startCountdown() {
 // ===================== SCAN =====================
 async function doScan() {
 
-  const url = document.getElementById('serverUrl').value.trim();
+  const url = document.getElementById("serverUrl").value.trim();
 
   if (!url || !camera) return;
 
-  log('Scanning…');
-  setStatus('warning');
+  log("Scanning...");
+  setStatus("warning");
 
   try {
 
@@ -221,45 +244,45 @@ async function doScan() {
     canvas.toBlob(async (blob) => {
 
       const form = new FormData();
-      form.append('image', blob, 'frame.jpg');
+      form.append("image", blob, "frame.jpg");
 
       const res = await fetch(
-        url.replace(/\/$/, '') + '/describe',
+        url.replace(/\/$/, "") + "/describe",
         {
-          method: 'POST',
+          method: "POST",
           body: form
         }
       );
 
       const data = await res.json();
 
-      setStatus('active');
+      setStatus("active");
 
-      speak(data.raw_caption || 'Nothing detected');
+      speak(data.raw_caption || "Nothing detected");
 
       renderObjects(data.objects_detected || []);
 
-    }, 'image/jpeg', 0.85);
+    }, "image/jpeg", 0.85);
 
   } catch (e) {
 
-    log('Scan error', 'error');
-    setStatus('danger');
+    log("Scan error", "error");
+    setStatus("danger");
 
   }
 
   if (running) startCountdown();
 }
 
-// ===================== OBJECT RENDER =====================
+// ===================== OBJECTS =====================
 function renderObjects(objects) {
 
-  objectsGrid.innerHTML = '';
+  objectsGrid.innerHTML = "";
 
   objects.forEach(obj => {
 
-    const chip = document.createElement('div');
-    chip.className = 'obj-chip';
+    const chip = document.createElement("div");
+    chip.className = "obj-chip";
 
     chip.innerHTML = `
       <div class="obj-name">${obj.object}</div>
@@ -282,8 +305,8 @@ async function toggleDetection() {
 
     running = true;
 
-    mainBtn.textContent = '⏸';
-    mainBtn.classList.add('running');
+    mainBtn.textContent = "⏸";
+    mainBtn.classList.add("running");
 
     doScan();
 
@@ -303,10 +326,10 @@ async function toggleDetection() {
 
     stopCamera();
 
-    mainBtn.textContent = '▶';
-    mainBtn.classList.remove('running');
+    mainBtn.textContent = "▶";
+    mainBtn.classList.remove("running");
 
-    setStatus('');
+    setStatus("");
 
   }
 }
@@ -331,8 +354,8 @@ function updateInterval(val) {
 
   intervalSec = parseInt(val);
 
-  document.getElementById('intervalVal').textContent =
-    val + 's';
+  document.getElementById("intervalVal").textContent =
+    val + "s";
 
   if (running) {
 
@@ -344,9 +367,8 @@ function updateInterval(val) {
     );
 
     startCountdown();
-
   }
 }
 
 // ===================== READY =====================
-log('App ready');
+log("App ready");
